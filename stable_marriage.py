@@ -1,4 +1,5 @@
 import numpy as np
+import random
 import itertools
 
 class StableMarriage():
@@ -47,9 +48,29 @@ class StableMarriage():
 
             for app in self.apps:
                 assert app in emp.own_prefs
+                
+                # Only currently functional for 1-1
+                for emp2 in self.emps:
+                    assert (app, emp2) in emp.tot_prefs
+
+
+            # Only currently functional for 1-1
+            for i, pair1 in enumerate(emp.tot_prefs[:-1]):
+                for pair2 in emp.tot_prefs[i+1:]:
+                    if pair1[0] == pair2[0]:
+                        ind1 = emp.aff_prefs[0].index(pair1[1])
+                        ind2 = emp.aff_prefs[0].index(pair2[1])
+                        assert ind1 < ind2
+                    if pair1[1] == pair2[1]:
+                        ind1 = emp.own_prefs.index(pair1[0])
+                        ind2 = emp.own_prefs.index(pair2[0])
+                        assert ind1 < ind2
+
             for emp2 in self.emps:
                 for aff_pref in emp.aff_prefs:
                     assert emp2 in aff_pref
+
+            
 
         for app in self.apps:
             assert len(app.prefs) == len(self.emps)
@@ -89,6 +110,10 @@ class StableMarriage():
                 aff_prefs_indices.append(aff_pref_indices)
 
                 print("Employer", str(i), "prefers employers", aff_pref_indices, "for its", str(j), "affiliate")
+
+
+            ind_prefs = [(self.apps.index(pair[0]), self.emps.index(pair[1])) for pair in emp.tot_prefs]
+            print("Employer", str(i), "pair prefs:", str(ind_prefs))
             
 
 class Applicant():
@@ -156,20 +181,13 @@ class Employer():
     # Does emp prefer match1 to match2?
     # Currently only works for 1-1
     def prefers(self, match1, match2):
-        app_match1 = match1[self]
-        app_match2 = match2[self]
+        match_set1 = (match1[self], match1[self.affs[0]])
+        match_set2 = (match2[self], match2[self.affs[0]])
 
-        aff_match1 = match1[self.affs[0]]
-        aff_match2 = match2[self.affs[0]]
-
-        app_index1 = self.own_prefs.index(app_match1)
-        app_index2 = self.own_prefs.index(app_match2)
-
-        aff_index1 = self.aff_prefs[0].index(aff_match1)
-        aff_index2 = self.aff_prefs[0].index(aff_match2)
-
-        return (app_index1 < app_index2) or ((app_index1 == app_index2) and (aff_index1 < aff_index2))
+        match1_ind = self.tot_prefs.index(match_set1)
+        match2_ind = self.tot_prefs.index(match_set2)
         
+        return match1_ind < match2_ind
 
 def build_marriage(n, version = 'standard', arity = 'one-to-one'):
     if arity == 'one-to-one':
@@ -220,40 +238,24 @@ def build_one_to_one_marriage(n, version):
 
         # This is a computationally crappy method to randomize
         if version == 'random':
-            is_valid = False
-            own_prefs = emp.get_own_prefs()
-            aff_prefs = emp.get_aff_prefs_at(0)
+            n_swaps = 100000
 
-            while not is_valid:
-                tot_prefs = list(np.random.permutation(tot_prefs))
-                is_valid = True
+            for i in range(n_swaps):
+                start_ind = random.randint(0, len(tot_prefs)-1)
+                
+                for j in range(len(tot_prefs)-1):
+                    match1 = tot_prefs[j]
+                    match2 = tot_prefs[(j+1)%len(tot_prefs)]
 
-                '''for aff in emp.get_own_prefs():
-                    list_at_aff = []
+                    match10 = emp.get_own_prefs().index(match1[0])
+                    match11 = emp.get_aff_prefs_at(0).index(match1[1])
+                    match20 = emp.get_own_prefs().index(match2[0])
+                    match21 = emp.get_aff_prefs_at(0).index(match2[1])
 
-                    for pair in enumerate(tot_prefs):
-                        if aff'''
-
-                for i, pair in enumerate(tot_prefs):
-                    left = pair[0]
-                    right = pair[1]
-
-                    left_ind = own_prefs.index(left)
-                    right_ind = aff_prefs.index(right)
-
-                    for pair2 in tot_prefs[:i]:
-                        left2 = pair2[0]
-                        right2 = pair2[1]
-
-                        left_ind2 = own_prefs.index(left2)
-                        right_ind2 = aff_prefs.index(right2)
-
-                        if left_ind < left_ind2 and right_ind < right_ind2:
-                            is_valid = False
-                            break
-
-                    if not is_valid:
-                        break
+                    
+                    if match10 > match20 or match11 > match21:
+                        tot_prefs[j] = match2
+                        tot_prefs[(j+1)%len(tot_prefs)] = match1
 
         emp.set_tot_prefs(tot_prefs)
         
@@ -341,28 +343,36 @@ def check_one_to_one_stability(marr, match):
     return True
 
 def main():
-    n_trials = 10000000
-    n_instances = 10
-    n_agents = 5
+    n_trials = 2000000
+    n_instances = 30
+    stop = False
 
-    for i in range(n_instances):
-        print("Running marriage instance", str(i))
-        marr = build_marriage(n_agents, 'random')
-        solved = False
-        solve_time = -1
+    for n_agents in [9]:
+        if stop: break
 
-        for j in range(n_trials):
-            match = build_one_to_one(marr, 'random')
+        print("Running on " + str(n_agents) + " agents")
 
-            if check_one_to_one_stability(marr, match):
-                solved = True
-                solve_time = j + 1
+        for i in range(n_instances):
+            print("Running marriage instance", str(i))
+            marr = build_marriage(n_agents, 'random')
+            solved = False
+            solve_time = -1
+
+            for j in range(n_trials):
+                match = build_one_to_one(marr, 'random')
+
+                if check_one_to_one_stability(marr, match):
+                    solved = True
+                    solve_time = j + 1
+                    break
+
+            if solved:
+                print("Solved in", str(solve_time), "trials")
+            else:
+                print("Unsolved in", str(n_trials), "trials")
+                marr.print_marriage()
+                stop = True
                 break
-
-        if solved:
-            print("Solved in", str(solve_time), "trials")
-        else:
-            print("Unsolved in", str(n_trials), "trials")
 
 if __name__ == "__main__":
     main()
