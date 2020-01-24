@@ -273,7 +273,7 @@ def build_one_to_one(marr, version='standard'):
 def build_standard_one_to_one(marr):
     match = {}
 
-    for i, emp in  enumerate(marr.get_emps()):
+    for i, emp in enumerate(marr.get_emps()):
         app = marr.get_app(i)
 
         match[emp] = app
@@ -283,6 +283,49 @@ def build_standard_one_to_one(marr):
 
     return match
 
+# Testing original gale shapley
+# Only 1-1
+def gale_shapley(marr):
+    temp_prefs = {}
+    temp_aff_prefs = {}
+
+    for emp in marr.get_emps():
+        temp_prefs[emp] = [app for app in emp.get_own_prefs()]
+        temp_aff_prefs[emp] = [emp for emp in emp.get_aff_prefs_at(0)]
+
+    for app in marr.get_apps():
+        temp_prefs[app] = [emp for emp in app.get_prefs()]
+
+    queue = [emp for emp in marr.get_emps()] # queue employers
+    match = {}
+
+    # Normal DA
+    while bool(queue):
+        emp = queue.pop(0)
+        prop_app = temp_prefs[emp].pop(0)
+        print("Employer", str(marr.get_emps().index(emp)), "proposed to Applicant", str(marr.get_apps().index(prop_app)))
+
+        if len(temp_prefs[emp]) == 0:
+            temp_prefs.pop(emp)
+
+        if prop_app not in match:
+            match[prop_app] = emp
+            match[emp] = prop_app
+        elif prop_app.prefers(emp, match[prop_app]):
+            broken_up_emp = match[prop_app]
+            match[prop_app] = emp
+            match[emp] = prop_app
+            queue.append(broken_up_emp)
+        else:
+            queue.append(emp)
+
+    if bool(queue):
+        print("Queue got emptied")
+    
+    check_one_to_one_validity(marr, match)
+    
+    return match
+    
 def build_random_one_to_one(marr):
     match = {}
     match_inds = np.random.permutation(marr.n_emps())
@@ -344,10 +387,10 @@ def check_one_to_one_stability(marr, match):
 
 def main():
     n_trials = 2000000
-    n_instances = 30
+    n_instances = 10
     stop = False
 
-    for n_agents in [9]:
+    for n_agents in range(4)[3:]:
         if stop: break
 
         print("Running on " + str(n_agents) + " agents")
@@ -358,6 +401,7 @@ def main():
             solved = False
             solve_time = -1
 
+            '''
             for j in range(n_trials):
                 match = build_one_to_one(marr, 'random')
 
@@ -365,7 +409,20 @@ def main():
                     solved = True
                     solve_time = j + 1
                     break
+            '''
 
+            match = gale_shapley(marr)
+            
+            if check_one_to_one_stability(marr, match):
+                print("Yay")
+            else:
+                print("done fucked")
+                marr.print_marriage()
+                print_match(marr, match)
+                stop = True
+                break
+   
+            ''' 
             if solved:
                 print("Solved in", str(solve_time), "trials")
             else:
@@ -373,6 +430,7 @@ def main():
                 marr.print_marriage()
                 stop = True
                 break
+            '''
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
