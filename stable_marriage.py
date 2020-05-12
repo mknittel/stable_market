@@ -1,4 +1,5 @@
 import numpy as np
+import pdb
 import random
 import itertools
 
@@ -32,6 +33,13 @@ class StableMarriage():
             return -1
 
         return self.apps[index]
+
+    def get_app_index(self, app):
+        if app not in self.apps:
+            print("Error, applicant not found")
+            return -1
+
+        return self.apps.index(app)
 
     def add_emp(self, emp):
         self.emps.append(emp)
@@ -189,11 +197,11 @@ class Employer():
         
         return match1_ind < match2_ind
 
-def build_marriage(n, version = 'standard', arity = 'one-to-one'):
+def build_marriage(n, constraint='employer-first', version = 'random', arity='one-to-one'):
     if arity == 'one-to-one':
-        return build_one_to_one_marriage(n, version)
+        return build_one_to_one_marriage(n, constraint, version)
 
-def build_one_to_one_marriage(n, version):
+def build_one_to_one_marriage(n, constraint, version):
     marr = StableMarriage()
 
     for i in range(n):
@@ -233,11 +241,15 @@ def build_one_to_one_marriage(n, version):
 
         tot_prefs = emp.get_own_prefs()        
 
-        for aff_pref in emp.get_aff_prefs():
-            tot_prefs = list(itertools.product(tot_prefs, aff_pref))
-
+        if constraint == 'employer-first' or version == 'standard':
+            for aff_pref in emp.get_aff_prefs():
+                tot_prefs = list(itertools.product(tot_prefs, aff_pref))
+        elif constraint == 'affiliate-first':
+            for aff_pref in emp.get_aff_prefs():
+                tot_prefs = list(itertools.product(aff_pref, tot_prefs))
+                tot_prefs = [(pair[1], pair[0]) for pair in tot_prefs]
         # This is a computationally crappy method to randomize
-        if version == 'random':
+        elif constraint == 'responsive':
             n_swaps = 100000
 
             for i in range(n_swaps):
@@ -295,6 +307,55 @@ def gale_shapley(marr):
 
     for app in marr.get_apps():
         temp_prefs[app] = [emp for emp in app.get_prefs()]
+
+    queue = [emp for emp in marr.get_emps()] # queue employers
+    match = {}
+
+    # Normal DA
+    while bool(queue):
+        emp = queue.pop(0)
+        prop_app = temp_prefs[emp].pop(0)
+        print("Employer", str(marr.get_emps().index(emp)), "proposed to Applicant", str(marr.get_apps().index(prop_app)))
+
+        if len(temp_prefs[emp]) == 0:
+            temp_prefs.pop(emp)
+
+        if prop_app not in match:
+            match[prop_app] = emp
+            match[emp] = prop_app
+        elif prop_app.prefers(emp, match[prop_app]):
+            broken_up_emp = match[prop_app]
+            match[prop_app] = emp
+            match[emp] = prop_app
+            queue.append(broken_up_emp)
+        else:
+            queue.append(emp)
+
+    if bool(queue):
+        print("Queue got emptied")
+    
+    check_one_to_one_validity(marr, match)
+    
+    return match
+    
+# Testing modified gale shapley
+# Only 1-1
+def mod_gale_shapley(marr):
+    temp_prefs = {}
+    temp_aff_prefs = {}
+    temp_tot_prefs = {}
+
+    for emp in marr.get_emps():
+        temp_prefs[emp] = [app for app in emp.get_own_prefs()]
+        temp_aff_prefs[emp] = [emp for emp in emp.get_aff_prefs_at(0)]
+        temp_tot_prefs[emp] = [pair for pair in emp.get_tot_prefs_at()]
+
+    for app in marr.get_apps():
+        temp_prefs[app] = [emp for emp in app.get_prefs()]
+
+    emp_next_prop = {} # by index in pref list
+    for emp in marr.get_emps():
+        emp_next_prop[emp] = 0
 
     queue = [emp for emp in marr.get_emps()] # queue employers
     match = {}
@@ -386,51 +447,58 @@ def check_one_to_one_stability(marr, match):
     return True
 
 def main():
-    n_trials = 2000000
-    n_instances = 10
+    n_trials = 200000
+    n_instances = 100
     stop = False
+    constraint = 'affiliate-first'
+    version = 'random'
+    algorithm = 'random'
 
-    for n_agents in range(4)[3:]:
+    for n_agents in range(5)[3:]:
         if stop: break
 
         print("Running on " + str(n_agents) + " agents")
 
         for i in range(n_instances):
             print("Running marriage instance", str(i))
-            marr = build_marriage(n_agents, 'random')
+            marr = build_marriage(n_agents, constraint, version)
             solved = False
             solve_time = -1
 
-            '''
-            for j in range(n_trials):
-                match = build_one_to_one(marr, 'random')
+            if algorithm == 'random':
+                for j in range(n_trials):
+                    match = build_one_to_one(marr, 'random')
 
-                if check_one_to_one_stability(marr, match):
-                    solved = True
-                    solve_time = j + 1
+                    if check_one_to_one_stability(marr, match):
+                        solved = True
+                        solve_time = j + 1
+                        break
+
+                    if j == n_trials - 1:
+                        pdb.set_trace()
+
+                if solved:
+                    print("Solved in", str(solve_time), "trials")
+                    #marr.print_marriage()
+                    #print_match(marr, match)
+                else:
+                    print("Unsolved in", str(n_trials), "trials")
+                    marr.print_marriage()
+                    print_match(marr, match)
+                    stop = True
                     break
-            '''
-
-            match = gale_shapley(marr)
-            
-            if check_one_to_one_stability(marr, match):
-                print("Yay")
-            else:
-                print("done fucked")
-                marr.print_marriage()
-                print_match(marr, match)
-                stop = True
-                break
+            elif algorithm == 'gale-shapley':
+                match = gale_shapley(marr)
+                
+                if check_one_to_one_stability(marr, match):
+                    print("Yay")
+                else:
+                    print("done fucked")
+                    marr.print_marriage()
+                    print_match(marr, match)
+                    stop = True
+                    break
    
-            ''' 
-            if solved:
-                print("Solved in", str(solve_time), "trials")
-            else:
-                print("Unsolved in", str(n_trials), "trials")
-                marr.print_marriage()
-                stop = True
-                break
-            '''
 
 if __name__ == '__main__':
     main()
